@@ -1,0 +1,37 @@
+#!/bin/bash
+
+set -e
+
+##### Ce script a pour but de changer l'ID des VM. #####
+### Attention, cela peut potentiellement causer des problèmes sur le système de fichiers. ###
+### En cas de problèmes, prévoir une extinction de la machine virtuelle et faire un fsck manuellement sur chaque partition avec Kaisen Linux ###
+
+export vgNAME=vg-images
+
+echo "ID actuel de la VM ?"
+read oldVMID
+case $oldVMID in
+    ''|*[!0-9]*)
+        echo "Numéro non valide. Arrêt du script."
+        exit;;
+    *)
+        echo Old VMID - $oldVMID ;;
+esac
+echo
+echo "Nouvel ID de la VM ?"
+read newVMID
+case $newVMID in
+    ''|*[!0-9]*)
+        echo "Numéro non valide. Arrêt du script."
+        exit;;
+    *)
+        echo New VMID - $newVMID ;;
+esac
+echo
+
+for i in $(lvs -a|grep $vgNAME | awk '{print $1}' | grep $oldVMID); \
+do lvrename $vgNAME/vm-$oldVMID-disk-$(echo $i | awk '{print substr($0,length,1)}') vm-$newVMID-disk-$(echo $i | awk '{print substr($0,length,1)}'); done; \
+sed -i "s/$oldVMID/$newVMID/g" /etc/pve/qemu-server/$oldVMID.conf; mv /etc/pve/qemu-server/$oldVMID.conf /etc/pve/qemu-server/$newVMID.conf; \
+mv /var/lib/vz/images/$oldVMID /var/lib/vz/images/$newVMID; mv /var/lib/vz/images/$newVMID/vm-$oldVMID-disk-0.qcow2 /var/lib/vz/images/$newVMID/vm-$newVMID-disk-0.qcow2;
+echo "Faire un FSCK manuellement avec Kaisen Linux en live sur la VM $newVMID et redémarrer la VM $newVMID"
+unset vgNAME

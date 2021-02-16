@@ -1,0 +1,53 @@
+#!/bin/bash
+
+set -e
+
+
+############ Prérequis ##############
+##Configurer une VM en thin provisioning avec des images disques qcow2 comme ceci :
+## - Mettre le disque en périphérique SCSI
+## - Utiliser le contrôleur SCSI sur VirtIO SCSI
+## - Cocher la case "Discard", cette case permet d'activer le TRIM sur les périphériques (récupération espace libre sur images qcow2) 
+
+if [[ "$EUID" -ne "0" ]]; then
+	echo "Run this script as root"
+	exit 1
+fi
+
+### Il est supposé ici, en respect des bonnes pratiques d'adminsitration Linux et du respect de la norme FHS que les partitions /tmp /var /srv et / sont séparées. Un fstrim sera à exécuter quotidiennement sur ces partitions."
+
+cat << EOF > /etc/cron.daily/fstrim
+#!/bin/bash
+
+set -e
+
+fstrim -v /
+fstrim -v /tmp
+fstrim -v /var
+fstrim -v /srv
+EOF
+
+chmod +x /etc/cron.daily/fstrim
+
+cat << EOF >> /etc/initramfs-tools/modules
+virtio
+virtio_scsi
+EOF
+
+/etc/cron.daily/fstrim
+
+if [ -e /etc/lvm/lvm.conf ]; then
+sed -i 's/issue_discards = 0/issue_discards = 1/g' /etc/lvm/lvm.conf
+fi
+
+update-initramfs -u
+
+####### Vérification postérieures et commandes optionnelles #######
+
+###### Vérifier sur les opération de TRIM sont bien prises en charge #######
+
+cat /sys/block/sda/queue/discard_*
+
+###### Donner à l'ensemble des partitions sur le disque la possibilité de TRIM automatiquement #######
+
+#tune2fs -o discard /dev/sdXY
