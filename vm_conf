@@ -7,7 +7,8 @@ set -e
 ##Configurer une VM en thin provisioning avec des images disques qcow2 comme ceci :
 ## - Mettre le disque en périphérique SCSI
 ## - Utiliser le contrôleur SCSI sur VirtIO SCSI
-## - Cocher la case "Discard", cette case permet d'activer le TRIM sur les périphériques (récupération espace libre sur images qcow2) 
+## - Cocher la case "Discard", cette case permet d'activer le TRIM sur les périphériques (récupération espace libre sur images qcow2)
+## - Cette méthode est fonctionnelle avec les systèmes de fichiers suivants (car testés) : EXT4, BTRFS, XFS
 
 if [[ "$EUID" -ne "0" ]]; then
 	echo "Run this script as root"
@@ -15,7 +16,6 @@ if [[ "$EUID" -ne "0" ]]; then
 fi
 
 ### Il est supposé ici, en respect des bonnes pratiques d'adminsitration Linux et du respect de la norme FHS que les partitions /tmp /var /srv et / sont séparées. Un fstrim sera à exécuter quotidiennement sur ces partitions."
-
 cat << EOF > /etc/cron.daily/fstrim
 #!/bin/bash
 
@@ -29,6 +29,7 @@ EOF
 
 chmod +x /etc/cron.daily/fstrim
 
+##Activation des modules virtio normalement compilés par défaut dans Linux
 cat << EOF >> /etc/initramfs-tools/modules
 virtio
 virtio_scsi
@@ -36,10 +37,12 @@ EOF
 
 /etc/cron.daily/fstrim
 
+#Configuration de LVM pour le TRIM automatisé si installé en LVM
 if [ -e /etc/lvm/lvm.conf ]; then
 sed -i 's/issue_discards = 0/issue_discards = 1/g' /etc/lvm/lvm.conf
 fi
 
+#Mise à jour des modules à charger pour le prochain redémarrage
 update-initramfs -u
 
 ####### Vérification postérieures et commandes optionnelles #######
@@ -51,3 +54,12 @@ cat /sys/block/sda/queue/discard_*
 ###### Donner à l'ensemble des partitions sur le disque la possibilité de TRIM automatiquement #######
 
 #tune2fs -o discard /dev/sdXY
+
+##Ces commandes sont optionnelles, et même sans celles-ci, le TRIM automatisé fonctionnera.
+##Le nettoyage sera fait automatiquement tous les jours grâce au script dans /etc/cron.daily
+
+##Après la configuration correcte de la gestion de la virtualisation en thin provisionning, un test de TRIM peut être fait.
+##Par exemple, copier de gros fichiers volumineux comme des images ISO, les supprimer et exécuter le script /etc/cron.daily/fstrim
+##Dans Datacenter => Résumé => Ressources
+##Le stockage est autoamtiquement réadapté à l'espace libre disponible réel.
+##Ou attendre l'exécution du script cron.daily est aussi une possibilité de test, pour éviter de le faire manuellement.
